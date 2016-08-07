@@ -336,22 +336,20 @@ bool equalReadings(AccelReading a, AccelReading b) {
 // buttons //
 /////////////
 
-
-
 void buttons() {
   int b = checkButton();
   if (b == 1) {
     a_animation++;
     if (a_animation > A_ANIMATIONS)
       a_animation = 1;
-    blinky(a_animation, 255);
+    blinky(a_animation, 0);
   }
 
   if (b == 2) {
     b_animation++;
     if (b_animation > B_ANIMATIONS)
       b_animation = 1;
-    blinky(b_animation, 130);
+    blinky(b_animation, 160);
   }
   if (b == 3 || b == 4) {
     a_animation = 100;
