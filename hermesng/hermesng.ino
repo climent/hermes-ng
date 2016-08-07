@@ -3,7 +3,7 @@
 
 // Accel imports.
 #include <Wire.h>
-#include <Adafruit_LSM303.h>
+#include <Adafruit_LSM303_Old.h>
 
 // Our custom data type.
 #include "AccelReading.h"
@@ -57,7 +57,7 @@
 #define BUTTON_A_PIN 9
 #define BUTTON_B_PIN 10
 
-Adafruit_LSM303 lsm; // Bridge to accelerometer hardware.
+Adafruit_LSM303_Old lsm; // Bridge to accelerometer hardware.
 AccelReading accelBuffer[10]; // Buffer for storing the last 10 readings.
 int bufferPosition; // Current read position of the buffer.
 double calibration; // Baseline for accelerometer data.
@@ -69,7 +69,6 @@ CRGB onboard[1];
 CRGB leds[NUM_LEDS];
 
 // Whether to show the blinking lead
-boolean blinker = true;
 uint8_t gHue = 0;
 uint8_t chase = 0;
 
@@ -88,7 +87,7 @@ void setup() {
 
   // Initialize the accelerometer
   accelSetup();
-  calibrate();
+  accelCalibrate();
 
   // Turn off the calibration pixel
   onboard[0] = CRGB::Black;
@@ -96,14 +95,14 @@ void setup() {
 }
 
 /* Number of total animations: */
-#define A_ANIMATIONS 3
+#define A_ANIMATIONS 4
 #define B_ANIMATIONS 2
 
 int fadeout = 0;
 int fadein = 0;
 int a_animation = 1;
 int b_animation = 1;
-uint8_t cycle = 0;
+//uint8_t cycle = 0;
 unsigned long now;
 
 void loop() {
@@ -111,15 +110,6 @@ void loop() {
     gHue++;  // slowly cycle the "base color" through the rainbow
   }
   EVERY_N_MILLISECONDS( 100 ) {
-    blinker = !blinker;
-    fadeout--;
-    if (fadeout < 0) {
-      fadeout = 0;
-    };
-    fadein++;
-    if (fadein > 255) {
-      fadein = 255;
-    };
     chase++;
     if (chase == 3) {
       chase = 0;
@@ -139,7 +129,7 @@ void updateLEDs() {
 
   double normalizedVector = abs(calibration - magnitude);
   double scale = normalizedVector / upperBound;
-  uint32_t pixelColor = pixelColorForScale(scale);
+  CRGB pixelColor = pixelColorForScale(scale);
 
   if (!sleep(magnitude)) {
     switch (a_animation) {
@@ -156,33 +146,26 @@ void updateLEDs() {
         fill_rainbow(leds, NUM_LEDS, gHue, 5);
         break;
       case 100:
-        fadeToBlackBy(leds, NUM_LEDS, 5);
+        fadeToBlackBy(leds, NUM_LEDS, 1);
         break;
     }
   } else {
-    showSleep(b_animation);
+    switch (b_animation) {
+      case 1:
+        breathe();
+        break;
+      case 2:
+        fadeOut(0, 0, 0, 20);
+        break;
+      case 100:
+        fadeToBlackBy(leds, NUM_LEDS, 1);
+        break;
+      default:
+        breathe();
+        break;
+    }
   }
 }
-
-void showSleep(int b_animation) {
-  switch (b_animation) {
-    case 1:
-      break;
-    case 2:
-      break;
-    case 3:
-      break;
-    case 100:
-      fadeToBlackBy(leds, NUM_LEDS, 5);
-      break;
-    default:
-      break;
-  }
-}
-
-
-
-
 
 ///////////
 // accel //
@@ -203,12 +186,27 @@ void accelSetup() {
   }
 }
 
-void calibrate() {
+void accelCalibrate() {
   calibration = 0;
+
+  unsigned long now = millis();
+  unsigned long last_change = now;
+  int blinker_time = 250;
+  bool onboard_blink = true;
 
   while (1) {
     // TODO(): Add another animation than a blinking led for calibration
-    //blinky(1, 250);
+    now = millis();
+    if (now - last_change > blinker_time) {
+      onboard_blink = !onboard_blink;
+      last_change = millis();
+      if (onboard_blink) {
+        onboard[0] = CRGB::Red;
+      } else {
+        onboard[0] = CRGB::Black;
+      }
+    }
+    FastLED.show();
 
     // Fill the buffer.
     if (!fillBuffer()) {
@@ -232,6 +230,9 @@ void calibrate() {
       calibration = avg;
     }
   }
+  // Clear the onboard pixel, in case it was left on
+  onboard[0] = CRGB::Black;
+  FastLED.show();
 }
 
 void accelPoll() {
@@ -350,7 +351,7 @@ void buttons() {
     b_animation++;
     if (b_animation > B_ANIMATIONS)
       b_animation = 1;
-    blinky(b_animation, 255);
+    blinky(b_animation, 130);
   }
   if (b == 3 || b == 4) {
     a_animation = 100;
@@ -484,17 +485,16 @@ void colorWipe(uint32_t c, uint8_t wait) {
 }
 
 void blinky(uint8_t c, uint8_t gHue) {
-  for (int i = 1; i = c; i++) {
+  fadeToBlackBy(leds, NUM_LEDS, 255);
+  for (int i = 1; i <= c; i++) {
     for (int j = 0; j < i ; j++) {
-      if (blinker) {
-        leds[j] = CHSV(gHue, 255, 192);
-      } else {
-        fadeToBlackBy(leds, NUM_LEDS, 100);
-      }
+      leds[j] = CHSV(gHue, 255, 192);
     }
     FastLED.show();
     delay(500);
   }
+  fadeToBlackBy(leds, NUM_LEDS, 255);
+  FastLED.show();
 }
 
 unsigned long lastCrawl;
@@ -537,7 +537,7 @@ void crawlColor(CRGB color) {
     }
 
     // Crawl 'high' side (center up)
-    pixelColor = leds;
+    pixelColor = lightArray;
     for (int led = centerLED; led < centerLED + LEDsPerSide; led++) {
       leds[constrainBetween(led, 0, NUM_LEDS - 1)] = *pixelColor++;
     }
@@ -561,18 +561,18 @@ int constrainBetween(int value, int lower, int higher) {
 
 void theaterChase(CRGB* leds, uint8_t num_leds, bool rainbow) {
   for (int i = 0; i < num_leds; i = i + 3) {
-    if (i + cycle < num_leds) {
+    if (i + chase < num_leds) {
       if (rainbow == true) {
-        leds[i + cycle] = CHSV(gHue + i, 255, 192);
+        leds[i + chase] = CHSV(gHue + i, 255, 192);
       } else {
-        leds[i + cycle] = CRGB::White;
+        leds[i + chase] = CRGB::White;
       }
     }
-    if (i + cycle - 1 >= 0 && i + cycle - 1 < num_leds ) {
-      leds[i + cycle - 1] = CRGB::Black;
+    if (i + chase - 1 >= 0 && i + chase - 1 < num_leds ) {
+      leds[i + chase - 1] = CRGB::Black;
     }
-    if (i + cycle - 2 >= 0 && i + cycle - 2 < num_leds ) {
-      leds[i + cycle - 2] = CRGB::Black;
+    if (i + chase - 2 >= 0 && i + chase - 2 < num_leds ) {
+      leds[i + chase - 2] = CRGB::Black;
     }
   }
 }
@@ -664,3 +664,61 @@ bool wakeup() {
   return false;
 }
 
+
+// Changes the colors of the strip, from the current value to the given value.
+void fadeOut(int red, int green, int blue, int wait) {
+  bool timeToGo = false;
+  while (!timeToGo) {
+    //    CRGB lightArray = leds;
+    timeToGo = true;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      uint8_t *p,
+              r = leds[i].r,
+              g = leds[i].g,
+              b = leds[i].b;
+      if (r > red) {
+        r -= 1;
+        timeToGo = false;
+      } else if (r < red) {
+        r += 1;
+        timeToGo = false;
+      }
+      if (g > green) {
+        g -= 1;
+        timeToGo = false;
+      } else if (g < green) {
+        g += 1;
+        timeToGo = false;
+      }
+      if (b > blue) {
+        b -= 1;
+        timeToGo = false;
+      } else if (b < blue) {
+        b += 1;
+        timeToGo = false;
+      }
+      //      if (timeToGo) {
+      //        return;
+      //      }
+      leds[i] = CRGB(r, g, b);
+    }
+    FastLED.show();
+    delay(wait);
+    buttons();
+    if (wakeup()) {
+      return;
+    }
+  }
+}
+
+void breathe() {
+  fadeOut(3, 0, 0, 20);
+  for (int i = 0; i < 100; i++) {
+    if (wakeup()) {
+      return;
+    }
+    delay(10);
+    buttons();
+  }
+  fadeOut(24, 0, 0, 20);
+}
