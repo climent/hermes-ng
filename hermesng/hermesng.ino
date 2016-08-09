@@ -94,16 +94,13 @@ void setup() {
   FastLED.show();
 }
 
-/* Number of total animations: */
-#define A_ANIMATIONS 4
-#define B_ANIMATIONS 2
-
 int fadeout = 0;
 int fadein = 0;
 int a_animation = 1;
 int b_animation = 1;
-//uint8_t cycle = 0;
+int pos;
 unsigned long now;
+bool enable_split_strip;
 
 void loop() {
   EVERY_N_MILLISECONDS( 20 ) {
@@ -122,6 +119,10 @@ void loop() {
   buttons();
 }
 
+/* Number of total animations: */
+#define A_ANIMATIONS 6
+#define B_ANIMATIONS 2
+
 void updateLEDs() {
   // Largest vector needed to hit max color (1.0).
   double upperBound = HERMES_SENSITIVITY;
@@ -134,16 +135,28 @@ void updateLEDs() {
   if (!sleep(magnitude)) {
     switch (a_animation) {
       case 1:
+        if (ENABLE_SPLIT_STRIP) {
+          enable_split_strip = true;
+        }
         crawlColor(pixelColor);
         break;
       case 2:
-        theaterChase(leds, NUM_LEDS, true);
+        enable_split_strip = false;
+        crawlColor(pixelColor);
         break;
       case 3:
-        theaterChase(leds, NUM_LEDS, false);
+        theaterChase(leds, NUM_LEDS, true);
         break;
       case 4:
+        theaterChase(leds, NUM_LEDS, false);
+        break;
+      case 5:
         fill_rainbow(leds, NUM_LEDS, gHue, 5);
+        break;
+      case 6:
+        fadeToBlackBy(leds, NUM_LEDS, 5);
+        pos = beatsin16(30, 0, NUM_LEDS);
+        leds[pos] += CHSV(250, 255, 192);
         break;
       case 100:
         fadeToBlackBy(leds, NUM_LEDS, 1);
@@ -155,6 +168,11 @@ void updateLEDs() {
         breathe();
         break;
       case 2:
+        fadeToBlackBy(leds, NUM_LEDS, 5);
+        pos = beatsin16(30, 0, NUM_LEDS);
+        leds[pos] += CHSV(250, 255, 192);
+        break;
+      case 3:
         fadeOut(0, 0, 0, 20);
         break;
       case 100:
@@ -167,10 +185,11 @@ void updateLEDs() {
   }
 }
 
+
+
 ///////////
 // accel //
 ///////////
-
 
 // Initialization.
 
@@ -489,7 +508,7 @@ void blinky(uint8_t c, uint8_t gHue) {
       leds[j] = CHSV(gHue, 255, 192);
     }
     FastLED.show();
-    delay(500);
+    delay(200);
   }
   fadeToBlackBy(leds, NUM_LEDS, 255);
   FastLED.show();
@@ -524,7 +543,7 @@ void crawlColor(CRGB color) {
   }
   lightArray[0] = color;
 
-  if (ENABLE_SPLIT_STRIP) {
+  if (enable_split_strip) {
     int centerLED = SPLIT_STRIP_CENTER;
     int LEDsPerSide = floor(NUM_LEDS / 2);
 
@@ -576,7 +595,7 @@ void theaterChase(CRGB* leds, uint8_t num_leds, bool rainbow) {
 }
 
 int COLOR_RANGE = 256;
-// Returns a pixel color for use by strip.setPixelColor().
+// Returns a pixel color for use by CRGB().
 // Automatically adjusts brightness.
 // Takes a scale, from 0.0 to 1.0, indicating progression
 // through the color rainbow.
