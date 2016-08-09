@@ -214,16 +214,12 @@ void accelCalibrate() {
   bool onboard_blink = true;
 
   while (1) {
-    // TODO(): Add another animation than a blinking led for calibration
+    // Check the time, and every $blinker_time do a change to blink the onboard pixel.
     now = millis();
     if (now - last_change > blinker_time) {
       onboard_blink = !onboard_blink;
+      onboard[0] = onboard_blink ? CRGB::Red : CRGB::Black;
       last_change = millis();
-      if (onboard_blink) {
-        onboard[0] = CRGB::Red;
-      } else {
-        onboard[0] = CRGB::Black;
-      }
     }
     FastLED.show();
 
@@ -273,6 +269,8 @@ double getVector(AccelReading reading) {
 // returning false.
 // Otherwise, if the accelerometer has read new data, this function advances the
 // buffer position, fills the buffer with accelerometer data, and returns true.
+//
+// The buffed stores xyz values, so we can use for both abs and angle.
 bool fillBuffer() {
   // Read from the hardware.
   lsm.read();
@@ -305,15 +303,38 @@ bool fillBuffer() {
 
 ///////////////////////////////////////////////////////////////////
 // Gets the average difference between the latest buffer and previous buffer.
-int getDelta() {
+float getAngle() {
+  //int getAngle(AccelReading a, AccelReading b) {
   AccelReading previousReading = getPreviousReading();
   AccelReading currentReading  = getCurrentReading();
 
-  int deltaX = abs(abs(currentReading.x) - abs(previousReading.x));
-  int deltaY = abs(abs(currentReading.y) - abs(previousReading.y));
-  int deltaZ = abs(abs(currentReading.z) - abs(previousReading.z));
+  //returns the Angle between two vectors. PI = 180degrees.
+  AccelReading aa = vectorNormalize(previousReading);
+  AccelReading bb = vectorNormalize(currentReading);
 
-  return (deltaX + deltaY + deltaZ) / 3;
+  float dot = vectorDotProduct(aa, bb);
+  return acos(dot);
+}
+
+float vectorDotProduct(AccelReading vector1, AccelReading vector2)
+{
+  float op = 0;
+  op += vector1.x * vector2.x;
+  op += vector1.y * vector2.y;
+  op += vector1.z * vector2.z;
+  return op;
+}
+
+AccelReading vectorNormalize(AccelReading vector) {
+  double mag = getMagnitude(vector);
+  // Make sure we are not dividing by zero.
+  if (mag == 0) {
+    mag = 0.0000001;
+  }
+  vector.x /= mag;
+  vector.y /= mag;
+  vector.z /= mag;
+  return vector;
 }
 
 // Gets the vector magnitude for the given reading.
@@ -333,6 +354,7 @@ int bufferSize() {
   return sizeof(accelBuffer) / sizeof(accelBuffer[0]);
 }
 
+// Gets the current buffer reading.
 AccelReading getCurrentReading() {
   return accelBuffer[bufferPosition];
 }
@@ -375,7 +397,6 @@ void buttons() {
     b_animation = 100;
   }
 }
-
 
 /*
   MULTI-CLICK: One Button, Multiple Events
@@ -473,23 +494,6 @@ int checkButton()
 /////////////////////
 
 CRGB lightArray[NUM_LEDS];
-
-void fadeToColor(CRGB c, uint8_t wait) {
-  boolean done = true;
-  for (int i = 0; i < NUM_LEDS; i++) {
-    done = true;
-    if (leds[i] != c) {
-      if (leds[i] > c) {
-        leds[i] -= 1;
-        done = false;
-      } else {
-        leds[i] += 1;
-        done = false;
-      }
-    }
-    delay(wait);
-  }
-}
 
 // Fill the dots one after the other with a color
 void colorWipe(uint32_t c, uint8_t wait) {
@@ -594,11 +598,13 @@ void theaterChase(CRGB* leds, uint8_t num_leds, bool rainbow) {
   }
 }
 
-int COLOR_RANGE = 256;
 // Returns a pixel color for use by CRGB().
 // Automatically adjusts brightness.
 // Takes a scale, from 0.0 to 1.0, indicating progression
 // through the color rainbow.
+
+int COLOR_RANGE = 256;
+
 CRGB pixelColorForScale(double scale) {
   float brightness = MAX_BRIGHTNESS * (scale + MIN_BRIGHTNESS);
   int c = COLOR_RANGE * scale; // Intentionally round to an int.
@@ -639,33 +645,22 @@ CRGB color(uint16_t color, float brightness)  {
 ///////////
 
 bool sleeping = false;
-bool waiting = false;
 
 bool sleep(double m) {
-  int repeats = 0;
   unsigned long now = millis();
 
   if (abs(calibration - m) > SLEEP_SENSITIVITY) {
     lastSignificantMovementTime = now;
-    waiting = false;
     sleeping = false;
-    digitalWrite(ONBOARD_LED_PIN, sleeping ? HIGH : LOW);
-    return false;
   } else {
     // Last significant movement time needs to be longer than sleep wait time.
-    if ((now - lastSignificantMovementTime) < SLEEP_WAIT_TIME_MS) {
-      // Haven't waited long enough.
-      sleeping = false;
-      digitalWrite(ONBOARD_LED_PIN, sleeping ? HIGH : LOW);
-      return false;
-    } else {
-      sleeping = true;
-      digitalWrite(ONBOARD_LED_PIN, sleeping ? HIGH : LOW);
-      return true;
-    }
-    waiting = true;
+    sleeping = (now - lastSignificantMovementTime) < SLEEP_WAIT_TIME_MS ? false : true;
   }
+  digitalWrite(ONBOARD_LED_PIN, sleeping ? HIGH : LOW);
+  return sleeping;
 }
+
+
 
 ////////////
 // wakeup //
@@ -674,53 +669,32 @@ bool sleep(double m) {
 bool wakeup() {
   accelPoll();
   double m = getMagnitude(getCurrentReading());
-
   if (abs(calibration - m) > SLEEP_SENSITIVITY) {
     return true;
   }
   return false;
 }
 
-
 // Changes the colors of the strip, from the current value to the given value.
 void fadeOut(int red, int green, int blue, int wait) {
   bool timeToGo = false;
   while (!timeToGo) {
-    //    CRGB lightArray = leds;
-    timeToGo = true;
     for (int i = 0; i < NUM_LEDS; i++) {
       uint8_t *p,
               r = leds[i].r,
               g = leds[i].g,
               b = leds[i].b;
-      if (r > red) {
-        r -= 1;
-        timeToGo = false;
-      } else if (r < red) {
-        r += 1;
-        timeToGo = false;
+      if (r == red && g == green && b == blue) {
+        timeToGo = true;
+      } else {
+        r += r > red ? -1 : 1;
+        g += g > green ? -1 : 1;
+        b += b > blue ? -1 : 1;
       }
-      if (g > green) {
-        g -= 1;
-        timeToGo = false;
-      } else if (g < green) {
-        g += 1;
-        timeToGo = false;
-      }
-      if (b > blue) {
-        b -= 1;
-        timeToGo = false;
-      } else if (b < blue) {
-        b += 1;
-        timeToGo = false;
-      }
-      //      if (timeToGo) {
-      //        return;
-      //      }
       leds[i] = CRGB(r, g, b);
     }
     FastLED.show();
-    delay(wait);
+    FastLED.delay(wait);
     buttons();
     if (wakeup()) {
       return;
