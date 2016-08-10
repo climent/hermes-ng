@@ -73,6 +73,9 @@ uint8_t gHue = 0;
 uint8_t chase = 0;
 
 void setup() {
+  Serial.begin(9600);
+  Serial.println("Hermes NG setup"); Serial.println("");
+
   // Initialize the strips
   FastLED.addLeds<NEOPIXEL, ONBOARD_LED_NEOPIX>(onboard, 1);
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
@@ -92,6 +95,7 @@ void setup() {
   // Turn off the calibration pixel
   onboard[0] = CRGB::Black;
   FastLED.show();
+  Serial.println("Hermes NG ready."); Serial.println("");
 }
 
 int fadeout = 0;
@@ -117,6 +121,12 @@ void loop() {
   updateLEDs();
   FastLED.show();
   buttons();
+
+//  Serial.println("Angle: ");
+//  Serial.println(getAngle());
+//  Serial.println("Pixel:");
+//  Serial.println(abs(calibration - getMagnitude(getCurrentReading())));
+//  Serial.println("");
 }
 
 /* Number of total animations: */
@@ -127,10 +137,12 @@ void updateLEDs() {
   // Largest vector needed to hit max color (1.0).
   double upperBound = HERMES_SENSITIVITY;
   double magnitude = getMagnitude(getCurrentReading());
-
+//  float angle = getAngle();
+  
   double normalizedVector = abs(calibration - magnitude);
   double scale = normalizedVector / upperBound;
   CRGB pixelColor = pixelColorForScale(scale);
+//  CRGB pixelColor = pixelColorForScale(angle/180);
 
   if (!sleep(magnitude)) {
     switch (a_animation) {
@@ -313,7 +325,7 @@ float getAngle() {
   AccelReading bb = vectorNormalize(currentReading);
 
   float dot = vectorDotProduct(aa, bb);
-  return acos(dot);
+  return acos(dot)*180/3.141595;
 }
 
 float vectorDotProduct(AccelReading vector1, AccelReading vector2)
@@ -638,6 +650,52 @@ CRGB color(uint16_t color, float brightness)  {
   return CRGB(r, g, b);
 }
 
+// Changes the colors of the strip, from the current value to the given value.
+void fadeOut(int red, int green, int blue, int wait) {
+  bool timeToGo = false;
+  while (!timeToGo) {
+    //    CRGB lightArray = leds;
+    timeToGo = true;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      uint8_t *p,
+              r = leds[i].r,
+              g = leds[i].g,
+              b = leds[i].b;
+      if (r != red) {
+        timeToGo = false;
+        r += r > red ? -1 : 1;
+      }
+      if (g != green) {
+        timeToGo = false;
+        g += g > green ? -1 : 1;
+      }
+      if (b != blue) {
+        timeToGo = false;
+        b += b > blue ? -1 : 1;
+      }
+      leds[i] = CRGB(r, g, b);
+    }
+    FastLED.show();
+    delay(wait);
+    buttons();
+    if (wakeup()) {
+      return;
+    }
+  }
+}
+
+void breathe() {
+  fadeOut(3, 0, 0, 20);
+  for (int i = 0; i < 100; i++) {
+    if (wakeup()) {
+      return;
+    }
+    delay(10);
+    buttons();
+  }
+  fadeOut(24, 0, 0, 20);
+}
+
 
 
 ///////////
@@ -675,41 +733,4 @@ bool wakeup() {
   return false;
 }
 
-// Changes the colors of the strip, from the current value to the given value.
-void fadeOut(int red, int green, int blue, int wait) {
-  bool timeToGo = false;
-  while (!timeToGo) {
-    for (int i = 0; i < NUM_LEDS; i++) {
-      uint8_t *p,
-              r = leds[i].r,
-              g = leds[i].g,
-              b = leds[i].b;
-      if (r == red && g == green && b == blue) {
-        timeToGo = true;
-      } else {
-        r += r > red ? -1 : 1;
-        g += g > green ? -1 : 1;
-        b += b > blue ? -1 : 1;
-      }
-      leds[i] = CRGB(r, g, b);
-    }
-    FastLED.show();
-    FastLED.delay(wait);
-    buttons();
-    if (wakeup()) {
-      return;
-    }
-  }
-}
 
-void breathe() {
-  fadeOut(3, 0, 0, 20);
-  for (int i = 0; i < 100; i++) {
-    if (wakeup()) {
-      return;
-    }
-    delay(10);
-    buttons();
-  }
-  fadeOut(24, 0, 0, 20);
-}
